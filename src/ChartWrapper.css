@@ -1,0 +1,8 @@
+.col a, .col-auto a{
+    display: block;
+    padding: 20px;
+    background-color: tomato;
+    border: 1px solid green;
+    color: #FFF;
+    font-size: 26px;
+  }

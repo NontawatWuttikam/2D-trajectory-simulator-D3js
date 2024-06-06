@@ -3,9 +3,35 @@ import D3Chart from './D3Chart';
 import * as d3 from "d3";
 import Row from 'react-bootstrap/Row';
 import Col from 'react-bootstrap/Col';
+import "./ChartWrapper.css"
 
+function isNumeric(str) {
+	if (typeof str != "string") return false // we only process strings!  
+	return !isNaN(str) && // use type coercion to parse the _entirety_ of the string (`parseFloat` alone does not do this)...
+		   !isNaN(parseFloat(str)) // ...and ensure strings of whitespace fail
+  }
 
 const CLICK_DISTANCE_THRESH = 1;
+const INITIAL_WIDTH = 800
+const INITIAL_HEIGHT = 700
+
+const CLASS_OPTIONS = [
+	"person",
+	"forklift",
+	"car"
+]
+
+const CLASS_COLORS_MAP = {
+	"person":"lime",
+	"forklift":"yellow",
+	"car":"brown"
+}
+
+const CLASS_EMOJI_MAP = {
+	"person":"🟢",
+	"forklift":"🟡",
+	"car":"🟤"
+}
 
 const Svg = (
 	props
@@ -23,11 +49,13 @@ const Svg = (
 	var yScale = useRef(null)
 	var isPointClicked = useRef(false)
 
-	const addPointToSvg = (cx, cy, r = 20, fill = 'green') => {
+	const addPointToSvg = (cx, cy, r = 10, fill = 'green', stroke=false) => {
 		svgElement.append("circle").attr('cx', cx)
 		.attr('cy', cy)
 		.attr('r', r)
 		.style('fill', fill)
+		.style('stroke', "red")
+		.style('stroke-width', (stroke)? 3 : 0)
 		.on("click", ()=>{
 			isPointClicked.current = true;
 			
@@ -48,13 +76,44 @@ const Svg = (
 
 	const refreshPointsSvg = ()=>{
 		svgElement.selectAll("circle").remove()
+		svgElement.selectAll("rect").remove()
+		svgElement.selectAll("line").remove()
+
+		let prevDot = null
 		props.dataPoints.forEach((dataPoint, index)=>{
 			console.log("dataPoint",dataPoint)
-			let pointColor = "green"
+			let pointColor = CLASS_COLORS_MAP[dataPoint.class]
+			let stroke = false
 			if (index == props.clickedPointIdx) {
-				pointColor = "red"
+				stroke = true
 			} 
-			addPointToSvg(dataPoint.x - props.tX.current, dataPoint.y - props.tY.current, 20, pointColor)
+			let viewportX = dataPoint.x - props.tX.current
+			let viewportY = dataPoint.y - props.tY.current
+		
+			prevDot = {x: viewportX, y: viewportY}
+
+			// draw trajectory mark
+			dataPoint.trajectories.forEach((trajectory)=>{
+				let markX = trajectory.x - props.tX.current
+				let markY = trajectory.y - props.tY.current
+				svgElement.append("rect").attr('x', markX)
+				.attr('y', markY)
+				.attr('width', 5)
+				.attr('height', 5)
+				.style('fill', 'black')
+				
+				svgElement.append("line")
+				.attr("x1", prevDot.x)
+				.attr("y1", prevDot.y)
+				.attr("x2", markX)
+				.attr("y2", markY)
+				.style('stroke', 'rgb(180, 180, 180)')
+      			.style('stroke-width', 2);
+
+				prevDot = {x: markX, y: markY}
+			})
+			
+			addPointToSvg(viewportX, viewportY, 10, pointColor, stroke)
 		})
 	}
 
@@ -64,22 +123,38 @@ const Svg = (
 			return;
 		}
 
-		var x = event.clientX - event.target.getBoundingClientRect().left;
-		var y = event.clientY - event.target.getBoundingClientRect().top;
+		if (props.clickMode == "point") {
+			var x = event.clientX - event.target.getBoundingClientRect().left;
+			var y = event.clientY - event.target.getBoundingClientRect().top;
 
-		console.log("click", clickCoord)
-		setClickCoord({
-			x: x,
-			y: y
-		})
+			console.log("click", clickCoord)
+			setClickCoord({
+				x: x,
+				y: y
+			})
 
-		props.setDataPoints(props.dataPoints.concat([{
-			x: x + props.tX.current,
-			y: y + props.tY.current,
-			class: "person"
-		}]));
+			props.setDataPoints(props.dataPoints.concat([{
+				x: x + props.tX.current,
+				y: y + props.tY.current,
+				class: "person",
+				speed: 0,
+				trajectories: [],
+			}]));
 
-		addPointToSvg(x,y);
+			addPointToSvg(x,y);
+		}
+		if (props.clickMode == "trajectory") {
+			// alert("click trajectory!")
+			var x = event.clientX - event.target.getBoundingClientRect().left;
+			var y = event.clientY - event.target.getBoundingClientRect().top;
+			x = x + props.tX.current
+			y = y + props.tY.current
+			var tempDataPoints = props.dataPoints
+			tempDataPoints[props.clickedPointIdx].trajectories.push({x:x, y:y})
+			props.setDataPoints(tempDataPoints)
+			console.log("props.dataPoints traj",props.dataPoints)
+			refreshPointsSvg();
+		}
 	}
 
 	// // on datapoints update
@@ -140,7 +215,7 @@ const Svg = (
 	// re render when click points or add points
 	useEffect(()=> {
 		refreshPointsSvg();
-	}, [props.dataPoints, props.clickedPointIdx])
+	}, [props.dataPoints, props.clickedPointIdx, props.clickMode])
 
 	useEffect(() => {
 	  xScale.current = d3.scaleLinear()
@@ -185,8 +260,8 @@ const SvgSizeEditPanel = (
 	props,
 ) => {
 
-	var [width, setWidth] = useState(700);
-	var [height, setHeight] = useState(700);
+	var [width, setWidth] = useState(INITIAL_WIDTH);
+	var [height, setHeight] = useState(INITIAL_HEIGHT);
 
 	const onWidthChange = (event) => {
 		setWidth(parseInt(event.target.value))
@@ -205,18 +280,18 @@ const SvgSizeEditPanel = (
 	return (
 		<div>
 			<Row>
-				<Col>
+				<Col md="auto">
 					Width
 				</Col>
-				<Col>
+				<Col md="auto">
 					<input type='text' onChange={onWidthChange}></input>
 				</Col>
 			</Row>
 			<Row>
-				<Col>
+			<Col md="auto">
 					Height
 				</Col>
-				<Col>
+				<Col md="auto">
 					<input type='text' onChange={onHeightChange}></input>
 				</Col>
 			</Row>
@@ -231,19 +306,102 @@ const PointEditor = (
 	props
 ) => {
 
+	const onClassOptionsDropDownClick = (event) => {
+		console.log("selecting", event.target.value)
+		let newDataPoints = props.dataPoints;
+		newDataPoints[props.clickedPointIdx].class = event.target.value;
+		props.setDataPoints(newDataPoints);
+	}
+
+	const onSpeedInputChanged = (event) => {
+		if (!isNumeric(event.target.value)) {
+			event.target.value = props.dataPoints[props.clickedPointIdx].speed
+		}
+		else {
+			let newSpeed = parseFloat(event.target.value)
+			props.dataPoints[props.clickedPointIdx].speed = newSpeed
+		}
+		console.log("dooooooo00000000000000000000000")
+	}
+
+	const onEditTrajectoryClick = (event) => {
+		props.setClickMode("trajectory");
+	}
+
+	const onFinishEditTrajectoryClick = (event) => {
+		props.setClickMode("point");
+	}
+
+	useEffect(()=>{
+		if (props.dataPoints.length != 0) document.getElementById("speed-input").value = props.dataPoints[props.clickedPointIdx].speed
+	}, [props.clickedPointIdx])
+
 	return (
 		<>
-			Edit Point
+			<h3>Edit Point</h3>
 			{
 				(props.dataPoints.length != 0) ?
 				<>
 					<Row>
-					<Col>
-						X
-					</Col>
-					<Col>
-						{props.dataPoints[props.clickedPointIdx].x}
-					</Col>
+						<Col>
+							X
+						</Col>
+						<Col>
+							{props.dataPoints[props.clickedPointIdx].x}
+						</Col>
+					</Row>
+					<Row>
+						<Col>
+							Y
+						</Col>
+						<Col>
+							{props.dataPoints[props.clickedPointIdx].y}
+						</Col>
+					</Row>
+					<Row>
+						<Col>
+							Class
+						</Col>
+						<Col>
+							<select name="class" id="class" onClick={onClassOptionsDropDownClick}>
+								{CLASS_OPTIONS.map((clas) => {
+									if (clas == props.dataPoints[props.clickedPointIdx].class)
+										return (<option value = {clas} selected>{CLASS_EMOJI_MAP[clas]} {clas}</option>)
+									return (<option value = {clas}>{CLASS_EMOJI_MAP[clas]} {clas}</option>)
+									} 	
+								)}
+							</select>
+						</Col>
+					</Row>
+					<Row>
+						<Col>
+							Speed
+						</Col>
+						<Col>
+							<input id="speed-input" type="text" onBlur={onSpeedInputChanged} defaultValue={props.dataPoints[props.clickedPointIdx].speed}></input>
+						</Col>
+					</Row>
+					<Row>
+						<Col>
+							{
+								(props.clickMode == "point") ?
+								<>
+									<button onClick={onEditTrajectoryClick}>Edit Trajectory</button>
+								</>
+								:
+								<>
+									<button onClick={onFinishEditTrajectoryClick}>Finish Edit</button>
+								</>
+							}
+						</Col>
+						<Col>
+							{/* {
+								props.dataPoints[props.clickedPointIdx].trajectories.map((trajectory)=>{
+									console.log("hello")
+									return (<><p>x:{trajectory.x} y:{trajectory.y}</p><br/></>)
+								})
+							} */}
+						</Col>
 					</Row>
 				</>
 				:
@@ -255,12 +413,13 @@ const PointEditor = (
 }
 
 export const MainApp = () => {
-	var [width, setWidth] = useState(700);
-	var [height, setHeight] = useState(700);
+	var [width, setWidth] = useState(INITIAL_WIDTH);
+	var [height, setHeight] = useState(INITIAL_HEIGHT);
 	var [dataPoints, setDataPoints]= useState([]);
 	var tX = useRef(0.0)
 	var tY = useRef(0.0)
 	var [clickedPointIdx, setClickedPointIdx] = useState(0)
+	var [clickMode, setClickMode] = useState("point")
 
 	useEffect(()=>{
 		console.log("dataPoints", dataPoints)
@@ -277,6 +436,7 @@ export const MainApp = () => {
 						setDataPoints={setDataPoints}
 						clickedPointIdx={clickedPointIdx}
 						setClickedPointIdx={setClickedPointIdx}
+						clickMode={clickMode}
 						tX={tX} 
 						tY={tY}
 					/>	
@@ -284,7 +444,10 @@ export const MainApp = () => {
 				<Col>
 					<PointEditor
 						dataPoints={dataPoints}
+						setDataPoints={setDataPoints}
 						clickedPointIdx={clickedPointIdx}
+						clickMode={clickMode}
+						setClickMode={setClickMode}
 					/>
 				</Col>
 			</Row>
