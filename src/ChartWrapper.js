@@ -22,7 +22,6 @@ const Svg = (
 	var xScale = useRef(null)
 	var yScale = useRef(null)
 	var isPointClicked = useRef(false)
-	var clickedPointIdx = useRef(999)
 
 	const addPointToSvg = (cx, cy, r = 20, fill = 'green') => {
 		svgElement.append("circle").attr('cx', cx)
@@ -36,23 +35,23 @@ const Svg = (
 			let y = d3.event.y + props.tY.current;
 
 			console.log("xytxty", d3.event.x, d3.event.y,  props.tX.current, props.tY.current,x,y)
-			let clickedToPointDists = props.dataPoints.current.map((dataPoint)=>{
+			let clickedToPointDists = props.dataPoints.map((dataPoint)=>{
 				return Math.pow((dataPoint.x - x),2) + Math.pow((dataPoint.y - y),2)
 			})
 			let closestDist = Math.min(...clickedToPointDists)
 
-			clickedPointIdx.current = clickedToPointDists.indexOf(closestDist)
-			console.log("closestDist",clickedToPointDists,closestDist,clickedPointIdx.current)
+			props.setClickedPointIdx(clickedToPointDists.indexOf(closestDist))
+			console.log("closestDist",clickedToPointDists,closestDist, props.clickedPointIdx)
 			refreshPointsSvg();		
 		});
 	}
 
 	const refreshPointsSvg = ()=>{
 		svgElement.selectAll("circle").remove()
-		props.dataPoints.current.forEach((dataPoint, index)=>{
+		props.dataPoints.forEach((dataPoint, index)=>{
 			console.log("dataPoint",dataPoint)
 			let pointColor = "green"
-			if (index == clickedPointIdx.current) {
+			if (index == props.clickedPointIdx) {
 				pointColor = "red"
 			} 
 			addPointToSvg(dataPoint.x - props.tX.current, dataPoint.y - props.tY.current, 20, pointColor)
@@ -74,11 +73,11 @@ const Svg = (
 			y: y
 		})
 
-		props.dataPoints.current.push({
+		props.setDataPoints(props.dataPoints.concat([{
 			x: x + props.tX.current,
 			y: y + props.tY.current,
 			class: "person"
-		});
+		}]));
 
 		addPointToSvg(x,y);
 	}
@@ -138,6 +137,11 @@ const Svg = (
 		})
 	)
 
+	// re render when click points or add points
+	useEffect(()=> {
+		refreshPointsSvg();
+	}, [props.dataPoints, props.clickedPointIdx])
+
 	useEffect(() => {
 	  xScale.current = d3.scaleLinear()
 		.domain([0, props.width])
@@ -177,7 +181,7 @@ const Svg = (
 	)
 }
 
-const InputPanel = (
+const SvgSizeEditPanel = (
 	props,
 ) => {
 
@@ -202,7 +206,7 @@ const InputPanel = (
 		<div>
 			<Row>
 				<Col>
-					width
+					Width
 				</Col>
 				<Col>
 					<input type='text' onChange={onWidthChange}></input>
@@ -210,25 +214,53 @@ const InputPanel = (
 			</Row>
 			<Row>
 				<Col>
-					height
+					Height
 				</Col>
 				<Col>
 					<input type='text' onChange={onHeightChange}></input>
 				</Col>
 			</Row>
 			<Row>
-				<button onClick={onClick}>Reset View</button>
+				<button onClick={onClick}>Reset ViewPort</button>
 			</Row>
 		</div>
+	)
+}
+
+const PointEditor = (
+	props
+) => {
+
+	return (
+		<>
+			Edit Point
+			{
+				(props.dataPoints.length != 0) ?
+				<>
+					<Row>
+					<Col>
+						X
+					</Col>
+					<Col>
+						{props.dataPoints[props.clickedPointIdx].x}
+					</Col>
+					</Row>
+				</>
+				:
+				<></>
+			}
+			
+		</>
 	)
 }
 
 export const MainApp = () => {
 	var [width, setWidth] = useState(700);
 	var [height, setHeight] = useState(700);
-	var dataPoints= useRef([]);
+	var [dataPoints, setDataPoints]= useState([]);
 	var tX = useRef(0.0)
 	var tY = useRef(0.0)
+	var [clickedPointIdx, setClickedPointIdx] = useState(0)
 
 	useEffect(()=>{
 		console.log("dataPoints", dataPoints)
@@ -236,14 +268,28 @@ export const MainApp = () => {
 
 	return (
 		<>
-			<Svg 
-				width={width} 
-				height={height} 
-				dataPoints = {dataPoints} 
-				tX={tX} 
-				tY={tY}
-			/>
-			<InputPanel 
+			<Row>
+				<Col>
+					<Svg 
+						width={width} 
+						height={height} 
+						dataPoints={dataPoints} 
+						setDataPoints={setDataPoints}
+						clickedPointIdx={clickedPointIdx}
+						setClickedPointIdx={setClickedPointIdx}
+						tX={tX} 
+						tY={tY}
+					/>	
+				</Col>
+				<Col>
+					<PointEditor
+						dataPoints={dataPoints}
+						clickedPointIdx={clickedPointIdx}
+					/>
+				</Col>
+			</Row>
+			
+			<SvgSizeEditPanel 
 				setWidthCallback={setWidth}
 				setHeightCallback={setHeight}
 			/>
