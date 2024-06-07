@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import D3Chart from './D3Chart';
 import * as d3 from "d3";
+import * as jStat from "jstat"
 import Row from 'react-bootstrap/Row';
 import Col from 'react-bootstrap/Col';
 import "./ChartWrapper.css"
@@ -93,6 +94,24 @@ const Svg = (
 			}
 	}
 
+	const computeUncertainPoint = (point, uncertainty) => {
+		if (uncertainty === 0) return point;
+	
+		const { x, y } = point;
+	
+		// Sample from a normal distribution with mean 0 and standard deviation equal to the square root of the variance
+		const offsetX = jStat.normal.sample(0, Math.sqrt(uncertainty));
+		const offsetY = jStat.normal.sample(0, Math.sqrt(uncertainty));
+	
+		// Add the sampled offsets to the original point
+		const sampledPoint = {
+			x: x + offsetX,
+			y: y + offsetY
+		};
+	
+		return sampledPoint;
+	}
+
 	const addPointToSvg = (cx, cy, r = 10, fill = 'green', stroke=false) => {
 		svgElement.append("circle").attr('cx', cx)
 		.attr('cy', cy)
@@ -151,8 +170,11 @@ const Svg = (
 
 				console.log("pointLocationOnTrajectoryLines", pointLocationOnTrajectoryLines)
 
+				// add uncertainty to make a point shaky
+				pointLocationOnTrajectoryLines = computeUncertainPoint(pointLocationOnTrajectoryLines, dataPoint.uncertainty)
+
 				pointX = pointLocationOnTrajectoryLines.x
-				pointY = pointLocationOnTrajectoryLines.y
+				pointY = pointLocationOnTrajectoryLines.y				
 
 				console.log("pointLocationOnTrajectoryLines", pointLocationOnTrajectoryLines)
 
@@ -191,11 +213,6 @@ const Svg = (
 			})
 			
 			addPointToSvg(viewportX, viewportY, 10, pointColor, stroke)
-
-			// step
-			if (props.mode == "play") {
-				
-			}
 		})
 	}
 
@@ -240,6 +257,7 @@ const Svg = (
 				currentY: y + props.tY.current, //
 				class: "person",
 				speed: 0.5,
+				uncertainty: 0.0,
 				trajectories: [],
 			}]));
 
@@ -469,7 +487,16 @@ const PointEditor = (
 			let newSpeed = parseFloat(event.target.value)
 			props.dataPoints[props.clickedPointIdx].speed = newSpeed
 		}
-		console.log("dooooooo00000000000000000000000")
+	}
+
+	const onPointUncertaintyInputChanged = (event) => {
+		if (!isNumeric(event.target.value)) {
+			event.target.value = props.dataPoints[props.clickedPointIdx].uncertainty
+		}
+		else {
+			let newUncertainty = parseFloat(event.target.value)
+			props.dataPoints[props.clickedPointIdx].uncertainty = newUncertainty
+		}
 	}
 
 	const onEditTrajectoryClick = (event) => {
@@ -502,6 +529,10 @@ const PointEditor = (
 		if (props.dataPoints.length != 0) document.getElementById("speed-input").value = props.dataPoints[props.clickedPointIdx].speed
 	}, [props.clickedPointIdx])
 
+	useEffect(()=>{
+		if (props.dataPoints.length != 0) document.getElementById("point_uncertainty-input").value = props.dataPoints[props.clickedPointIdx].uncertainty
+	}, [props.clickedPointIdx])
+
 	return (
 		<>
 			<h3>Edit Point</h3>
@@ -510,18 +541,10 @@ const PointEditor = (
 				<>
 					<Row>
 						<Col>
-							X
+							Coordinate
 						</Col>
 						<Col>
-							{props.dataPoints[props.clickedPointIdx].x}
-						</Col>
-					</Row>
-					<Row>
-						<Col>
-							Y
-						</Col>
-						<Col>
-							{props.dataPoints[props.clickedPointIdx].y}
+							[{props.dataPoints[props.clickedPointIdx].x},{props.dataPoints[props.clickedPointIdx].y}]
 						</Col>
 					</Row>
 					<Row>
@@ -545,6 +568,14 @@ const PointEditor = (
 						</Col>
 						<Col>
 							<input id="speed-input" type="text" onBlur={onSpeedInputChanged} defaultValue={props.dataPoints[props.clickedPointIdx].speed}></input>
+						</Col>
+					</Row>
+					<Row>
+						<Col>
+							Point Uncertainty
+						</Col>
+						<Col>
+							<input id="point_uncertainty-input" type="text" onBlur={onPointUncertaintyInputChanged} defaultValue={props.dataPoints[props.clickedPointIdx].uncertainty}></input>
 						</Col>
 					</Row>
 					<Row>
@@ -599,7 +630,7 @@ export const MainApp = () => {
 	},[dataPoints])
 
 	return (
-		<>
+		<div class="mainbody">
 			<Row>
 				<Col>
 					<Svg 
@@ -643,6 +674,6 @@ export const MainApp = () => {
 				</Col>	
 			</Row>	
 			
-		</>
+		</div>
 	)
 }
