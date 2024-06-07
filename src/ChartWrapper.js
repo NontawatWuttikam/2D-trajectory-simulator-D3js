@@ -381,9 +381,9 @@ const Svg = (
 		ref={ref}
 		onClick={onMapClick}
 		style={{
-			border: "2px solid gold",
+			border: "3px solid gold",
 			height: props.height,
-			width: props.width
+			width: props.width,
 		}} 
 	  />
 	)
@@ -429,7 +429,9 @@ const SvgSizeEditPanel = (
 				</Col>
 			</Row>
 			<Row>
+				<Col>
 				<button onClick={onClick}>Reset ViewPort</button>
+				</Col>
 			</Row>
 		</div>
 	)
@@ -458,10 +460,10 @@ const ControlPanel = (
 				<button onClick={onPlayClicked}> ▶️ Play</button>
 			</Col>
 			<Col md="auto">
-				<button onClick={onPauseClicked}> ▐▐ Pause</button>	
+				<button onClick={onPauseClicked}> ⏸️ Pause</button>	
 			</Col>
 			<Col md="auto">
-				<button onClick={onStopClicked}> ◼ Stop</button>
+				<button onClick={onStopClicked}> ⏹️ Stop</button>
 			</Col>
 		</Row>
 		</>
@@ -583,19 +585,19 @@ const PointEditor = (
 							{
 								(props.clickMode == "point") ?
 								<>
-									<button onClick={onEditTrajectoryClick}>Edit Trajectory</button>
+									<button onClick={onEditTrajectoryClick}>📝 Edit Trajectory</button>
 								</>
 								:
 								<>
-									<button onClick={onFinishEditTrajectoryClick}>Finish Edit</button>
+									<button onClick={onFinishEditTrajectoryClick}>✅ Finish Edit</button>
 								</>
 							}
 						</Col>
 						<Col md="auto">
-							<button onClick={onClearTrajectoryClicked}>Clear Trajectory</button>
+							<button onClick={onClearTrajectoryClicked}>❌ Clear Trajectory</button>
 						</Col>
 						<Col md="auto">
-							<button onClick={onDeletePointClicked}>Delete Point</button>
+							<button onClick={onDeletePointClicked}>🗑️ Delete Point</button>
 						</Col>
 						<Col md="auto">
 							{/* {
