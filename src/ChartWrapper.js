@@ -42,12 +42,56 @@ const Svg = (
 	const svgElement = d3.select(ref.current)
 
 	var [clickCoord, setClickCoord] = useState({})
+	var startSimTime = useRef(new Date().getTime())
+	var [playIntervalId, setPlayIntervalId] = useState(0)
+	var currentSimTime = useRef(new Date().getTime())
 	var prevDragCoord = useRef(null)
 	var axisGeneratorBottom = useRef(null)
 	var axisGeneratorRight = useRef(null)
 	var xScale = useRef(null)
 	var yScale = useRef(null)
 	var isPointClicked = useRef(false)
+
+	const isNotEditMode = () => {
+		return props.mode == "play" || props.mode == "pause"
+	}
+
+	const computePointLocationOnTrajectoryLines = (initialPoint, trajectories, distance) => {
+		if (trajectories.length == 0) return initialPoint
+		let a = initialPoint
+		let tj = trajectories
+		let accumDist = 0;
+		console.log("trajectories", tj)
+		for (let i = 0; i < trajectories.length; i++) {
+			let a2bDist = Math.sqrt(Math.pow((a.x - tj[i].x), 2) + Math.pow((a.y - tj[i].y), 2))
+			console.log("iter",i)
+			console.log("a2bDist", a2bDist)
+			console.log("distance", distance)
+			console.log("accumDist", accumDist)
+			console.log("a", a)
+			console.log("tj[i]", tj[i])
+			if ((accumDist + a2bDist) < distance) {
+				accumDist += a2bDist
+				a = tj[i];
+				continue
+			}
+			else {
+				console.log("compute in-between point")
+				console.log("accumDist + a2bDist", accumDist + a2bDist)
+				let finalDist = a2bDist - ((accumDist + a2bDist) - distance)
+				console.log("finalDist", finalDist)
+				let ratio = finalDist/a2bDist
+				let pointX = a.x + (ratio*(tj[i].x - a.x))
+				let pointY = a.y + (ratio*(tj[i].y - a.y))
+				return {x: pointX, y:pointY}
+			}
+		}
+		// in case of distance > actual traj distance. stop
+		return {
+				x: tj[tj.length - 1].x, 
+				y: tj[tj.length - 1].y
+			}
+	}
 
 	const addPointToSvg = (cx, cy, r = 10, fill = 'green', stroke=false) => {
 		svgElement.append("circle").attr('cx', cx)
@@ -57,6 +101,8 @@ const Svg = (
 		.style('stroke', "red")
 		.style('stroke-width', (stroke)? 3 : 0)
 		.on("click", ()=>{
+			if (isNotEditMode()) return;
+
 			isPointClicked.current = true;
 			
 			let x = d3.event.x + props.tX.current;
@@ -81,16 +127,47 @@ const Svg = (
 
 		let prevDot = null
 		props.dataPoints.forEach((dataPoint, index)=>{
-			console.log("dataPoint",dataPoint)
+
+			let pointX = dataPoint.x
+			let pointY = dataPoint.y
+			let deltaT = 0
+
+			if (props.mode == "play") {
+				currentSimTime.current = new Date().getTime()
+				deltaT = currentSimTime.current - startSimTime.current
+				console.log("startSimTime", startSimTime)
+				console.log("currentSimTime",currentSimTime)
+				console.log("deltaT", deltaT)
+			}
+
+			if (props.mode == "play" || props.mode == "pause") {
+				// use current point xy instead of start point xy
+				let distance = dataPoint.speed*deltaT
+				let pointLocationOnTrajectoryLines = computePointLocationOnTrajectoryLines(
+					{x: dataPoint.x, y: dataPoint.y},
+					dataPoint.trajectories,
+					distance
+				)
+
+				console.log("pointLocationOnTrajectoryLines", pointLocationOnTrajectoryLines)
+
+				pointX = pointLocationOnTrajectoryLines.x
+				pointY = pointLocationOnTrajectoryLines.y
+
+				console.log("pointLocationOnTrajectoryLines", pointLocationOnTrajectoryLines)
+
+			}
+
 			let pointColor = CLASS_COLORS_MAP[dataPoint.class]
 			let stroke = false
 			if (index == props.clickedPointIdx) {
 				stroke = true
-			} 
-			let viewportX = dataPoint.x - props.tX.current
-			let viewportY = dataPoint.y - props.tY.current
+			}
+
+			let viewportX = pointX - props.tX.current
+			let viewportY = pointY - props.tY.current
 		
-			prevDot = {x: viewportX, y: viewportY}
+			prevDot = {x: dataPoint.x - props.tX.current, y: dataPoint.y - props.tY.current}
 
 			// draw trajectory mark
 			dataPoint.trajectories.forEach((trajectory)=>{
@@ -114,10 +191,32 @@ const Svg = (
 			})
 			
 			addPointToSvg(viewportX, viewportY, 10, pointColor, stroke)
+
+			// step
+			if (props.mode == "play") {
+				
+			}
 		})
 	}
 
+	const onPlay = () => {
+		startSimTime.current = new Date().getTime()
+		var intervalId = setInterval(()=>{
+			refreshPointsSvg()
+			console.log("onPlay")
+		}, 10)
+		setPlayIntervalId(intervalId)
+
+	}
+
+	const resetSvgStates = () => {
+		clearInterval(playIntervalId)
+		refreshPointsSvg()
+	}	
+
 	const onMapClick = (event) => {
+		if (isNotEditMode()) return;
+
 		if (isPointClicked.current) {
 			isPointClicked.current = false;
 			return;
@@ -128,6 +227,7 @@ const Svg = (
 			var y = event.clientY - event.target.getBoundingClientRect().top;
 
 			console.log("click", clickCoord)
+
 			setClickCoord({
 				x: x,
 				y: y
@@ -136,8 +236,10 @@ const Svg = (
 			props.setDataPoints(props.dataPoints.concat([{
 				x: x + props.tX.current,
 				y: y + props.tY.current,
+				currentX: x + props.tX.current, // for simulation
+				currentY: y + props.tY.current, //
 				class: "person",
-				speed: 0,
+				speed: 0.5,
 				trajectories: [],
 			}]));
 
@@ -149,11 +251,10 @@ const Svg = (
 			var y = event.clientY - event.target.getBoundingClientRect().top;
 			x = x + props.tX.current
 			y = y + props.tY.current
-			var tempDataPoints = props.dataPoints
+			var tempDataPoints = [...props.dataPoints]
 			tempDataPoints[props.clickedPointIdx].trajectories.push({x:x, y:y})
 			props.setDataPoints(tempDataPoints)
 			console.log("props.dataPoints traj",props.dataPoints)
-			refreshPointsSvg();
 		}
 	}
 
@@ -212,7 +313,21 @@ const Svg = (
 		})
 	)
 
-	// re render when click points or add points
+	useEffect(()=>{
+		if (props.mode == "edit") {
+			resetSvgStates()
+		}
+
+		else if (props.mode == "play") {
+			onPlay()
+		}
+
+		else if (props.mode == "pause") {
+			clearInterval(playIntervalId)
+		}
+	}, [props.mode])
+
+	// re render when datapoints and click change
 	useEffect(()=> {
 		refreshPointsSvg();
 	}, [props.dataPoints, props.clickedPointIdx, props.clickMode])
@@ -302,13 +417,46 @@ const SvgSizeEditPanel = (
 	)
 }
 
+const ControlPanel = (
+	props
+) => {
+
+	const onPlayClicked = (event) => {
+		props.setMode("play")
+	}
+
+	const onPauseClicked = (event) => {
+		props.setMode("pause")
+	}
+
+	const onStopClicked = (event) => {
+		props.setMode("edit")
+	}
+
+	return (
+		<>
+		<Row>
+			<Col md="auto">
+				<button onClick={onPlayClicked}> ▶️ Play</button>
+			</Col>
+			<Col md="auto">
+				<button onClick={onPauseClicked}> ▐▐ Pause</button>	
+			</Col>
+			<Col md="auto">
+				<button onClick={onStopClicked}> ◼ Stop</button>
+			</Col>
+		</Row>
+		</>
+	)
+}
+
 const PointEditor = (
 	props
 ) => {
 
 	const onClassOptionsDropDownClick = (event) => {
 		console.log("selecting", event.target.value)
-		let newDataPoints = props.dataPoints;
+		let newDataPoints = props.dataPoints
 		newDataPoints[props.clickedPointIdx].class = event.target.value;
 		props.setDataPoints(newDataPoints);
 	}
@@ -330,6 +478,24 @@ const PointEditor = (
 
 	const onFinishEditTrajectoryClick = (event) => {
 		props.setClickMode("point");
+	}
+
+	const onClearTrajectoryClicked = (event) => {
+		var tempDataPoints = [...props.dataPoints]
+		while (tempDataPoints[props.clickedPointIdx].trajectories.length > 0) {
+			tempDataPoints[props.clickedPointIdx].trajectories.pop();
+		}
+		props.setDataPoints(tempDataPoints)
+	}
+
+	const onDeletePointClicked = (event) => {
+		var tempDataPoints = []
+		for (let i = 0; i < props.dataPoints.length ; i ++) {
+			if (i != props.clickedPointIdx) tempDataPoints.push(props.dataPoints[i])
+		}
+		console.log("tempDataPoints",tempDataPoints,props.clickedPointIdx)
+		props.setClickedPointIdx(Math.max(0, props.clickedPointIdx - 1))
+		props.setDataPoints(tempDataPoints)
 	}
 
 	useEffect(()=>{
@@ -382,7 +548,7 @@ const PointEditor = (
 						</Col>
 					</Row>
 					<Row>
-						<Col>
+						<Col md="auto">
 							{
 								(props.clickMode == "point") ?
 								<>
@@ -394,7 +560,13 @@ const PointEditor = (
 								</>
 							}
 						</Col>
-						<Col>
+						<Col md="auto">
+							<button onClick={onClearTrajectoryClicked}>Clear Trajectory</button>
+						</Col>
+						<Col md="auto">
+							<button onClick={onDeletePointClicked}>Delete Point</button>
+						</Col>
+						<Col md="auto">
 							{/* {
 								props.dataPoints[props.clickedPointIdx].trajectories.map((trajectory)=>{
 									console.log("hello")
@@ -420,6 +592,7 @@ export const MainApp = () => {
 	var tY = useRef(0.0)
 	var [clickedPointIdx, setClickedPointIdx] = useState(0)
 	var [clickMode, setClickMode] = useState("point")
+	var [mode, setMode] = useState("edit") // edit, play, pause
 
 	useEffect(()=>{
 		console.log("dataPoints", dataPoints)
@@ -439,6 +612,7 @@ export const MainApp = () => {
 						clickMode={clickMode}
 						tX={tX} 
 						tY={tY}
+						mode={mode}
 					/>	
 				</Col>
 				<Col>
@@ -446,16 +620,29 @@ export const MainApp = () => {
 						dataPoints={dataPoints}
 						setDataPoints={setDataPoints}
 						clickedPointIdx={clickedPointIdx}
+						setClickedPointIdx={setClickedPointIdx}
 						clickMode={clickMode}
 						setClickMode={setClickMode}
 					/>
 				</Col>
 			</Row>
+			<Row>
+			`	<Col>
+					<ControlPanel
+						mode={mode}
+						setMode={setMode}
+					/>
+				</Col>	
+			</Row>
+			<Row>
+				<Col>
+					<SvgSizeEditPanel 
+						setWidthCallback={setWidth}
+						setHeightCallback={setHeight}
+					/>
+				</Col>	
+			</Row>	
 			
-			<SvgSizeEditPanel 
-				setWidthCallback={setWidth}
-				setHeightCallback={setHeight}
-			/>
 		</>
 	)
 }
