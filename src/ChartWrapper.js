@@ -15,6 +15,7 @@ function isNumeric(str) {
 const CLICK_DISTANCE_THRESH = 1;
 const INITIAL_WIDTH = 800
 const INITIAL_HEIGHT = 700
+const INITIAL_SCALE = 66.0
 
 const CLASS_OPTIONS = [
 	"person",
@@ -42,7 +43,6 @@ const Svg = (
 	const ref = useRef()
 	const svgElement = d3.select(ref.current)
 
-	var [clickCoord, setClickCoord] = useState({})
 	var startSimTime = useRef(new Date().getTime())
 	var [playIntervalId, setPlayIntervalId] = useState(0)
 	var currentSimTime = useRef(new Date().getTime())
@@ -124,8 +124,8 @@ const Svg = (
 
 			isPointClicked.current = true;
 			
-			let x = d3.event.x + props.tX.current;
-			let y = d3.event.y + props.tY.current;
+			let x = (d3.event.x/props.scale) + props.tX.current;
+			let y = (d3.event.y/props.scale) + props.tY.current;
 
 			console.log("xytxty", d3.event.x, d3.event.y,  props.tX.current, props.tY.current,x,y)
 			let clickedToPointDists = props.dataPoints.map((dataPoint)=>{
@@ -134,8 +134,8 @@ const Svg = (
 			let closestDist = Math.min(...clickedToPointDists)
 
 			props.setClickedPointIdx(clickedToPointDists.indexOf(closestDist))
+			console.log("clickPointIdx", props.clickedPointIdx,clickedToPointDists.indexOf(closestDist))
 			console.log("closestDist",clickedToPointDists,closestDist, props.clickedPointIdx)
-			refreshPointsSvg();		
 		});
 	}
 
@@ -161,11 +161,14 @@ const Svg = (
 
 			if (props.mode == "play" || props.mode == "pause") {
 				// use current point xy instead of start point xy
-				let distance = dataPoint.speed*deltaT
+				let deltaTHour = deltaT/1000/60/60
+				let distance = dataPoint.speed*deltaTHour // distance in kilometer
+				let distanceMeter = distance*1000
+				console.log("meter",distance)
 				let pointLocationOnTrajectoryLines = computePointLocationOnTrajectoryLines(
 					{x: dataPoint.x, y: dataPoint.y},
 					dataPoint.trajectories,
-					distance
+					distanceMeter
 				)
 
 				console.log("pointLocationOnTrajectoryLines", pointLocationOnTrajectoryLines)
@@ -186,15 +189,18 @@ const Svg = (
 				stroke = true
 			}
 
-			let viewportX = pointX - props.tX.current
-			let viewportY = pointY - props.tY.current
+			let viewportX = (pointX * props.scale) - props.tX.current * props.scale
+			let viewportY = (pointY * props.scale) - props.tY.current * props.scale
 		
-			prevDot = {x: dataPoint.x - props.tX.current, y: dataPoint.y - props.tY.current}
+			prevDot = {
+				x: (dataPoint.x * props.scale) - props.tX.current * props.scale, 
+				y: (dataPoint.y * props.scale) - props.tY.current * props.scale
+			}
 
 			// draw trajectory mark
 			dataPoint.trajectories.forEach((trajectory)=>{
-				let markX = trajectory.x - props.tX.current
-				let markY = trajectory.y - props.tY.current
+				let markX = (trajectory.x * props.scale) - props.tX.current * props.scale
+				let markY = (trajectory.y * props.scale) - props.tY.current * props.scale
 				svgElement.append("rect").attr('x', markX)
 				.attr('y', markY)
 				.attr('width', 5)
@@ -243,32 +249,26 @@ const Svg = (
 			var x = event.clientX - event.target.getBoundingClientRect().left;
 			var y = event.clientY - event.target.getBoundingClientRect().top;
 
-			console.log("click", clickCoord)
-
-			setClickCoord({
-				x: x,
-				y: y
-			})
-
 			props.setDataPoints(props.dataPoints.concat([{
-				x: x + props.tX.current,
-				y: y + props.tY.current,
-				currentX: x + props.tX.current, // for simulation
-				currentY: y + props.tY.current, //
+				x: (x/props.scale) + props.tX.current,
+				y: (y/props.scale) + props.tY.current,
 				class: "person",
-				speed: 0.5,
+				speed: 10, //km/hr
 				uncertainty: 0.0,
 				trajectories: [],
 			}]));
 
-			addPointToSvg(x,y);
+			console.log("onmapclick!", (x/props.scale + props.tX.current), (y/props.scale + props.tY.current))
+			console.log("onmapclickXY!", x, y)
+
+			// addPointToSvg(x,y);
 		}
 		if (props.clickMode == "trajectory") {
 			// alert("click trajectory!")
 			var x = event.clientX - event.target.getBoundingClientRect().left;
 			var y = event.clientY - event.target.getBoundingClientRect().top;
-			x = x + props.tX.current
-			y = y + props.tY.current
+			x = (x/props.scale) + props.tX.current
+			y = (y/props.scale) + props.tY.current
 			var tempDataPoints = [...props.dataPoints]
 			tempDataPoints[props.clickedPointIdx].trajectories.push({x:x, y:y})
 			props.setDataPoints(tempDataPoints)
@@ -276,10 +276,6 @@ const Svg = (
 		}
 	}
 
-	// // on datapoints update
-	// useEffect(()=>{
-	// 	console.log("dataPoints", props.dataPoints)
-	// },[props.dataPoints])
 
 
 	svgElement.call(d3.drag()
@@ -292,13 +288,20 @@ const Svg = (
 				}
 			}
 			else {
+
+				console.log("xy", d3.event.x, d3.event.y)
 				let dTX = d3.event.x - prevDragCoord.current.x;
 				let dTY = d3.event.y - prevDragCoord.current.y;
 
-				props.tX.current -= dTX;
-				props.tY.current -= dTY;
+				props.tX.current -= dTX/props.scale;
+				props.tY.current -= dTY/props.scale;
+
+				props.tX.current = Math.max(0, props.tX.current)
+				props.tY.current = Math.max(0, props.tY.current)
+
 	
-				console.log("dtx, dty", dTX, dTY)
+				console.log("dtx, dty", dTX/props.scale, dTY/props.scale)
+				console.log("props.scale", props.scale)
 				console.log("props.tXtY", props.tX, props.tY)
 
 				prevDragCoord.current = {
@@ -306,17 +309,19 @@ const Svg = (
 					y: d3.event.y
 				}
 
+				console.log("(props.tX.current+props.width)/props.scale",(props.tX.current+props.width)/props.scale)
+
 				// update scale bars
 				xScale.current = d3.scaleLinear()
-					.range([0,props.width])
-					.domain([props.tX.current, props.tX.current+props.width])
-	  			axisGeneratorBottom.current = d3.axisBottom(xScale.current)
-
+				.range([0,props.width])
+				.domain([props.tX.current, (props.tX.current+props.width/props.scale)])
+				axisGeneratorBottom.current = d3.axisBottom(xScale.current)
+		
 				yScale.current = d3.scaleLinear()
-				  .range([0,props.width])
-				  .domain([props.tY.current, props.tY.current+props.height])
+					.range([0,props.height])
+					.domain([props.tY.current, (props.tY.current+props.height/props.scale)])
 				axisGeneratorRight.current = d3.axisRight(yScale.current)
-
+		
 				svgElement.select("g.x.axis").call(axisGeneratorBottom.current)
 				svgElement.select("g.y.axis").call(axisGeneratorRight.current)
 
@@ -331,6 +336,14 @@ const Svg = (
 		})
 	)
 
+	var zoom = d3.zoom()
+	.on("zoom", ()=>{
+		console.log("on zoom", d3.event.transform.k)
+		props.setScale(d3.event.transform.k)
+	})
+
+	svgElement.call(zoom).call(zoom.transform, d3.zoomIdentity.scale(props.scale))
+	
 	useEffect(()=>{
 		if (props.mode == "edit") {
 			resetSvgStates()
@@ -348,15 +361,31 @@ const Svg = (
 	// re render when datapoints and click change
 	useEffect(()=> {
 		refreshPointsSvg();
-	}, [props.dataPoints, props.clickedPointIdx, props.clickMode])
+		console.log("refreshhhhhhhhhhhhhhhhh")
+	}, [props.dataPoints, props.clickedPointIdx, props.clickMode, props.scale, props.width, props.height])
+
+	useEffect(()=>{
+		xScale.current = d3.scaleLinear()
+		.range([0,props.width])
+		.domain([props.tX.current, (props.tX.current+props.width)/props.scale])
+		axisGeneratorBottom.current = d3.axisBottom(xScale.current)
+
+		yScale.current = d3.scaleLinear()
+			.range([0,props.height])
+			.domain([props.tY.current, (props.tY.current+props.height)/props.scale])
+		axisGeneratorRight.current = d3.axisRight(yScale.current)
+
+		svgElement.select("g.x.axis").call(axisGeneratorBottom.current)
+		svgElement.select("g.y.axis").call(axisGeneratorRight.current)
+	}, [props.scale])
 
 	useEffect(() => {
 	  xScale.current = d3.scaleLinear()
-		.domain([0, props.width])
-		.range([0, props.width])
+		.range([0,props.width])
+		.domain([props.tX.current, (props.tX.current+props.width)/props.scale])
 	  yScale.current = d3.scaleLinear()
-	  	.domain([0, props.width])
-	  	.range([0, props.width])
+		.range([0,props.height])
+		.domain([props.tY.current, (props.tY.current+props.height)/props.scale])
 	  const svgElement = d3.select(ref.current)
 	  axisGeneratorBottom.current = d3.axisBottom(xScale.current)
 	  axisGeneratorRight.current = d3.axisRight(yScale.current)
@@ -620,6 +649,7 @@ const PointEditor = (
 export const MainApp = () => {
 	var [width, setWidth] = useState(INITIAL_WIDTH);
 	var [height, setHeight] = useState(INITIAL_HEIGHT);
+	var [scale, setScale] = useState(INITIAL_SCALE);
 	var [dataPoints, setDataPoints]= useState([]);
 	var tX = useRef(0.0)
 	var tY = useRef(0.0)
@@ -638,6 +668,8 @@ export const MainApp = () => {
 					<Svg 
 						width={width} 
 						height={height} 
+						scale={scale}
+						setScale={setScale}
 						dataPoints={dataPoints} 
 						setDataPoints={setDataPoints}
 						clickedPointIdx={clickedPointIdx}
